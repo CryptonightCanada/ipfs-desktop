@@ -1,12 +1,16 @@
-const { ipcRenderer } = require('electron')
+// @ts-check
+const { ipcRenderer, contextBridge } = require('electron')
 const screenshotHook = require('./screenshot')
 const connectionHook = require('./connection-status')
 const { COUNTLY_KEY, VERSION } = require('../common/consts')
+const ipcMainEvents = require('../common/ipc-main-events')
 
 screenshotHook()
 connectionHook()
 
 const urlParams = new URLSearchParams(window.location.search)
+
+let previousHash = null
 
 function checkIfVisible () {
   if (document.hidden) {
@@ -18,17 +22,6 @@ function checkIfVisible () {
     window.location.hash = previousHash
   }
 }
-
-var originalSetItem = window.localStorage.setItem
-window.localStorage.setItem = function () {
-  if (arguments[0] === 'i18nextLng') {
-    ipcRenderer.send('updateLanguage', arguments[1])
-  }
-
-  originalSetItem.apply(this, arguments)
-}
-
-let previousHash = null
 
 document.addEventListener('visibilitychange', () => {
   checkIfVisible()
@@ -44,7 +37,7 @@ document.addEventListener('hashchange', () => {
   previousHash = window.location.hash
 })
 
-window.ipfsDesktop = {
+contextBridge.exposeInMainWorld('ipfsDesktop', {
   countlyAppKey: COUNTLY_KEY,
 
   countlyDeviceId: urlParams.get('deviceId'),
@@ -60,14 +53,26 @@ window.ipfsDesktop = {
 
   version: VERSION,
 
+  /**
+   *
+   * @param {import('countly-sdk-nodejs').ConsentFeatures} consent
+   */
   removeConsent: (consent) => {
-    ipcRenderer.send('countly.removeConsent', consent)
+    ipcRenderer.send(ipcMainEvents.COUNTLY_REMOVE_CONSENT, consent)
   },
 
+  /**
+   *
+   * @param {import('countly-sdk-nodejs').ConsentFeatures} consent
+   */
   addConsent: (consent) => {
-    ipcRenderer.send('countly.addConsent', consent)
+    ipcRenderer.send(ipcMainEvents.COUNTLY_ADD_CONSENT, consent)
+  },
+
+  updateLanguage: (language) => {
+    ipcRenderer.send(ipcMainEvents.LANG_UPDATED, language)
   }
-}
+})
 
 // Inject api address
 window.localStorage.setItem('ipfsApi', urlParams.get('api'))
